@@ -1,0 +1,151 @@
+-- DDL operations
+
+--drop function check_the_length;
+-- execute functions step by step and observe the structure of the functions
+--Do not forget that many operations to be done here will also be done by creating a procedure. I focused on functions
+
+-- length
+create or replace function check_the_length(varchar(100), length integer) returns boolean as
+$$
+begin
+
+    return length($1) = length;
+end
+$$ language plpgsql;
+
+
+-- substring
+create or replace function check_the_digit(column_name char(10), begins_from integer) returns boolean as
+$$
+begin
+    return substr(column_name, begins_from) ~ '^[0-9]*$';
+end
+$$ language plpgsql;
+
+
+--left
+create or replace function check_the_left_letter(column_name char(10), begins_from integer) returns boolean as
+$$
+begin
+    return "left"(column_name, begins_from) !~ '^[0-9]*$';
+end
+$$ language plpgsql;
+
+
+--regexp_match
+create function null_or_empty(text varchar(100)) returns boolean as
+$$
+begin
+    return regexp_match(text, '\s+');
+end
+$$ language plpgsql;
+
+--insert by using a function
+create or replace function insert_customer(char(11), char(11), varchar(100), varchar(100), varchar(100), date, boolean,
+                                           char(14))
+    returns void as
+$$
+begin
+    insert into customers (citizen_number, number, first_name, middle_name, family_name, birth_date, married,
+                           phone_number)
+    values ($1, $2, $3, $4, $5, $6, $7, $8);
+end;
+$$ language plpgsql;
+
+--upper / left /repeat
+create or replace function hide_and_change(name varchar(100), surname varchar(100), ch char(1), len integer)
+    returns varchar(100) as
+$$
+begin
+    return upper(left(name, len)) || repeat(ch, length(name) - len) || ' ' || upper(left(surname, len)) ||
+           repeat(ch, length(surname) - len);
+end
+$$ language plpgsql;
+
+--exists
+create or replace function hide_and_change_via_citizen_number(char(11), ch char(1), len integer)
+    returns varchar(100) as
+$$
+begin
+    if exists((select first_name from customers where citizen_number = $1))
+    then
+        return hide_and_change((select first_name from customers where citizen_number = $1),
+                               (select family_name from customers where citizen_number = $1), ch, len);
+    end if;
+end
+$$ language plpgsql;
+
+
+--create a semi complex function by using if/else statement
+create or replace function get_marital_status_text_tr(marital_status boolean)
+    returns varchar(10) as
+$$
+declare
+    status_str varchar(10);
+begin
+    if marital_status = true then
+        status_str = 'married';
+    elseif marital_status = false then
+        status_str = 'single';
+    end if;
+    return status_str;
+end
+$$ language plpgsql;
+
+create or replace function get_detail_information()
+    returns table
+            (
+                id             char(11),
+                name           varchar(100),
+                marital_status varchar
+            )
+as
+$$
+begin
+    return query select c.citizen_number,
+                        hide_and_change(c.first_name, c.family_name, '#', 2),
+                        get_marital_status_text_tr(c.married)
+                 from customers c;
+end
+$$ language plpgsql;
+
+
+
+drop table customers;
+
+
+create table customers
+(
+    customer_id    serial primary key,
+    --check if the first char is string and the rest of it is numbers-using check keyword and functions like
+    --length substring etc.
+    citizen_number char(11) unique check (check_the_length(citizen_number, 11) and
+                                          check_the_digit(citizen_number, 2) and
+                                          check_the_left_letter(citizen_number, 1) ) not null,
+
+    number         varchar(5) unique check (check_the_digit(number, 1))              not null,
+
+    first_name     varchar(100) check ( null_or_empty(first_name) )                  not null,
+    middle_name    varchar(100),
+    family_name    varchar(100) check ( null_or_empty(family_name) )                 not null,
+    birth_date     date                                                              not null,
+    married        boolean default (false)                                           not null,
+    phone_number   char(14)                                                          not null
+
+);
+
+--check the error
+select insert_customer('aa234567890', '01234', 'baran', 'baran', 'kaplan', '05-10-1989', false, '123');
+--check the error
+select insert_customer('a1234567890', 'a1234', 'baran', 'baran', 'kaplan', '05-10-1989', false, '123');
+--check the error
+select insert_customer('a1234567890', '01234', 'baran and', 'baran', 'kaplan', '05-10-1989', false, '123');
+--this one works!
+select insert_customer('a1234567890', '01234', 'baran', '', 'kaplan', '05-10-1989', false, '123');
+
+select hide_and_change('baran', 'kaplan', '*', 2);
+
+select hide_and_change_via_citizen_number('a1234567890', '*', 2);
+
+select *
+from get_detail_information();
